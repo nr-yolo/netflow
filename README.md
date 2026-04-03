@@ -2,6 +2,18 @@
 
 Live packet flow visualizer — fetches from ntop, geocodes IPs, resolves hostnames, detects device OS, and renders animated arcs on a world map.
 
+# Architecture
+Install ntop-ng on pfsense firewall
+Install docker on a vlan where ntop accessible 
+Ntop fetches data from pfsense
+Netflow fetches data from Ntop-ng lactive flow endpoint
+
+Tested on ntopng Community v.6.2.250909 rev.0 (FreeBSD 15.0) | pfsense 2.8.1
+
+# Demo
+https://github.com/user-attachments/assets/9f373a97-af63-43fd-9c9a-c19053923f6b
+
+
 **Zero npm dependencies.** Pure Node.js built-ins only.
 
 ---
