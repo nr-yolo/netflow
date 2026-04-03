@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetFlow Globe</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#020912;--ocean:#040f20;--land:#0e2035;--border:#1e4570;
+  --panel:rgba(3,10,22,.96);--txt:#7aadcc;--bright:#c8e4f5;
+  --accent:#00f5d4;--blue:#0f8fff;--warn:#ffaa28;--danger:#ff4060;
+  --inbound:#ff8c42;--green:#22c55e;--purple:#a78bfa;--pw:340px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+  color:var(--txt);font-family:'JetBrains Mono',monospace}
+#map-canvas{position:absolute;top:0;left:0;pointer-events:none;z-index:1}
+#anim-canvas{position:absolute;top:0;left:0;z-index:2;cursor:grab}
+#anim-canvas:active{cursor:grabbing}
+#topbar{position:absolute;top:0;left:0;right:var(--pw);
+  display:flex;flex-direction:column;z-index:20;pointer-events:none}
+#hdr{display:flex;align-items:center;gap:5px;padding:9px 14px;flex-wrap:nowrap;overflow:hidden;
+  background:rgba(2,9,18,.97);pointer-events:auto}
+#hdr h1{font-family:'Orbitron',monospace;font-size:12px;font-weight:900;
+  color:var(--accent);letter-spacing:3px;white-space:nowrap;flex-shrink:0}
+.pill{background:rgba(0,245,212,.07);border:1px solid rgba(0,245,212,.18);
+  border-radius:2px;padding:2px 7px;font-size:10px;color:var(--bright);white-space:nowrap;flex-shrink:0}
+.pill b{color:var(--accent)}
+#hdr-gap{flex:1 1 0;min-width:2px}
+/* INTERFACE STATS BAR */
+#if-stats-bar{
+  display:flex;align-items:center;gap:0;pointer-events:none;
+  background:rgba(2,9,18,.95);border-bottom:1px solid rgba(30,69,112,.6);
+}
+.isb-seg{
+  display:flex;align-items:center;gap:10px;
+  padding:5px 14px;border-right:1px solid rgba(30,69,112,.5);
+  font-size:9px;white-space:nowrap;
+}
+.isb-seg:last-child{border-right:none}
+.isb-label{color:var(--txt);opacity:.55;letter-spacing:1px;text-transform:uppercase;font-size:8px}
+.isb-val{color:var(--bright);font-size:10px}
+.isb-val b{color:var(--accent)}
+.isb-up{color:#22c55e}.isb-dn{color:#3b82f6}
+.isb-alert{color:var(--danger)}
+.isb-warn{color:var(--warn)}
+/* throughput bar */
+.thr-bar{display:flex;align-items:center;gap:5px}
+.thr-track{width:60px;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+.thr-fill-up{height:100%;background:#22c55e;border-radius:2px;transition:width .6s ease}
+.thr-fill-dn{height:100%;background:#3b82f6;border-radius:2px;transition:width .6s ease}
+.hbtn{background:transparent;border:1px solid var(--border);color:var(--txt);
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;
+  padding:4px 10px;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;pointer-events:auto}
+.hbtn:hover{border-color:var(--accent);color:var(--accent)}
+.hbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(0,245,212,.08)}
+.hbtn.paused{border-color:var(--warn);color:var(--warn);background:rgba(255,170,40,.08)}
+.hbtn.renew{border-color:var(--green);color:var(--green)}
+.hbtn.renew:hover{background:rgba(34,197,94,.1)}
+.hbtn.renewing{border-color:var(--warn);color:var(--warn);animation:blink .6s infinite}
+#filter-bar{display:none;flex-direction:column;pointer-events:auto;
+  background:rgba(4,15,32,.97);border-bottom:1px solid var(--border)}
+#filter-bar.open{display:flex}
+#fb-row1{display:flex;align-items:center;gap:6px;padding:7px 14px;flex-wrap:wrap;
+  border-bottom:1px solid rgba(30,69,112,.35)}
+#fb-row2{display:flex;align-items:center;gap:8px;padding:7px 14px;flex-wrap:wrap}
+#filter-bar label{font-size:9px;letter-spacing:1px;color:var(--txt);
+  white-space:nowrap;text-transform:uppercase;flex-shrink:0}
+#filter-bar input[type=text],#filter-bar input[type=number]{
+  background:rgba(3,14,28,.95);border:1px solid var(--border);
+  color:var(--bright);font-family:'JetBrains Mono',monospace;font-size:10px;
+  padding:4px 7px;outline:none;transition:border-color .15s}
+#filter-bar input:focus{border-color:var(--accent);box-shadow:0 0 5px rgba(0,245,212,.18)}
+#filter-bar input.fi-active{border-color:rgba(0,245,212,.55)}
+#fi-src-ip,#fi-dst-ip,#fi-host{width:110px}
+#fi-src-port,#fi-dst-port{width:58px}
+#fi-ifid,#fi-length{width:52px}
+.fsep{width:1px;height:16px;background:var(--border);flex-shrink:0}
+#filter-badge{display:none;background:rgba(255,170,40,.1);border:1px solid var(--warn);
+  color:var(--warn);font-size:9px;padding:2px 7px;letter-spacing:1px;flex-shrink:0}
+#filter-badge.on{display:block}
+#filter-clear{background:transparent;border:1px solid var(--danger);color:var(--danger);
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;
+  padding:3px 8px;cursor:pointer;transition:all .15s;flex-shrink:0}
+#filter-clear:hover{background:rgba(255,64,96,.1)}
+#filter-count{font-size:9px;color:var(--txt);opacity:.5;white-space:nowrap}
+.proto-group{display:flex;align-items:center;flex-shrink:0}
+.proto-btn{background:transparent;border:1px solid var(--border);color:var(--txt);
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;
+  padding:3px 11px;cursor:pointer;transition:all .15s;user-select:none}
+.proto-btn:first-child{border-radius:2px 0 0 2px}
+.proto-btn:last-child{border-radius:0 2px 2px 0;margin-left:-1px}
+.proto-btn.tcp-sel{background:rgba(0,245,212,.1);border-color:var(--accent);color:var(--accent)}
+.proto-btn.udp-sel{background:rgba(167,139,250,.1);border-color:var(--purple);color:var(--purple)}
+#apply-params{background:rgba(0,245,212,.08);border:1px solid var(--accent);color:var(--accent);
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;
+  padding:3px 10px;cursor:pointer;transition:all .15s;flex-shrink:0}
+#apply-params:hover{background:rgba(0,245,212,.18)}
+.param-hint{font-size:9px;color:var(--txt);opacity:.38;white-space:nowrap}
+#session-modal{position:fixed;inset:0;background:rgba(2,9,18,.88);
+  display:none;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px)}
+#session-modal.open{display:flex}
+#session-box{background:#06121f;border:1px solid var(--border);padding:26px 30px;width:360px;max-width:94vw}
+#session-box h3{font-family:'Orbitron',monospace;font-size:11px;letter-spacing:3px;
+  color:var(--accent);margin-bottom:20px}
+.mf{margin-bottom:13px}
+.mf label{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--txt);margin-bottom:5px}
+.mf input{width:100%;background:rgba(3,14,28,.9);border:1px solid var(--border);
+  color:var(--bright);font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:7px 10px;outline:none;transition:border-color .15s}
+.mf input:focus{border-color:var(--accent)}
+.macts{display:flex;gap:8px;margin-top:18px}
+.mbtn{padding:7px 16px;font-family:'JetBrains Mono',monospace;font-size:10px;
+  letter-spacing:1px;cursor:pointer;border:1px solid;background:transparent;transition:all .15s}
+.mbtn-ok{border-color:var(--accent);color:var(--accent)}.mbtn-ok:hover{background:rgba(0,245,212,.1)}
+.mbtn-cancel{border-color:var(--border);color:var(--txt)}.mbtn-cancel:hover{border-color:var(--txt)}
+#session-status{margin-top:10px;font-size:10px;min-height:16px;word-break:break-all}
+#session-status.ok{color:var(--green)}#session-status.err{color:var(--danger)}
+#zoom-ctrl{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:4px;z-index:20;pointer-events:auto}
+.zbtn{background:rgba(3,10,22,.88);border:1px solid var(--border);color:var(--txt);
+  width:26px;height:26px;cursor:pointer;font-size:14px;user-select:none;
+  display:flex;align-items:center;justify-content:center;transition:all .15s}
+.zbtn:hover{border-color:var(--accent);color:var(--accent)}
+#statusbar{position:absolute;bottom:0;left:0;right:var(--pw);
+  display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:10px;
+  background:linear-gradient(0deg,rgba(2,9,18,.97) 0%,transparent 100%);
+  z-index:20;pointer-events:none}
+#dot{width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 8px var(--accent);flex-shrink:0;animation:blink 2s infinite}
+#dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+#dot.err{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+#legend{position:absolute;bottom:34px;left:44px;font-size:9px;
+  background:rgba(3,10,22,.88);border:1px solid var(--border);
+  padding:9px 12px;z-index:20;pointer-events:none}
+.ltitle{font-family:'Orbitron',monospace;font-size:7px;letter-spacing:2px;color:var(--accent);margin-bottom:5px}
+.lrow{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.ldot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.larr{font-size:10px;flex-shrink:0}
+#hint{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);
+  font-size:9px;color:var(--txt);opacity:.3;z-index:20;white-space:nowrap;pointer-events:none}
+#zoom-badge{position:absolute;left:46px;bottom:34px;font-size:9px;color:var(--txt);
+  opacity:.38;z-index:20;letter-spacing:1px;pointer-events:none}
+#panel{position:absolute;top:0;right:0;bottom:0;width:var(--pw);
+  background:var(--panel);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;z-index:20}
+#ph{font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;
+  color:var(--accent);padding:12px 13px;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center}
+#ph-left{display:flex;flex-direction:column;gap:3px}
+#ph-sub{font-size:8px;color:var(--txt);opacity:.5;letter-spacing:0;
+  font-family:'JetBrains Mono',monospace;text-transform:none}
+#flow-count{font-size:9px;color:var(--txt);font-family:'JetBrains Mono',monospace;letter-spacing:0}
+#flow-list{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.fi{padding:8px 13px;border-bottom:1px solid rgba(22,48,80,.4);font-size:10px;line-height:1.6;transition:background .1s}
+.fi:hover{background:rgba(0,245,212,.04)}
+.fi-dir{display:inline-block;font-size:7px;padding:1px 4px;border-radius:2px;
+  margin-right:4px;letter-spacing:1px;vertical-align:middle}
+.fi-dir.out{background:rgba(0,245,212,.1);color:var(--accent);border:1px solid rgba(0,245,212,.2)}
+.fi-dir.in{background:rgba(255,140,66,.1);color:var(--inbound);border:1px solid rgba(255,140,66,.2)}
+.fi-app{font-family:'Orbitron',monospace;font-size:8px;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px}
+.fi-host{color:var(--accent);font-size:9px;opacity:.9;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi-ips{color:var(--txt);font-size:9px}.fi-geo{font-size:9px;opacity:.6;margin-top:1px}
+.fi-meta{display:flex;gap:9px;margin-top:2px;font-size:9px;flex-wrap:wrap}
+.fi-out{color:var(--accent)}.fi-in{color:var(--inbound)}
+.fi-score{color:var(--danger)}.fi-info{opacity:.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
+.fi-os-badge{display:inline-block;font-size:7px;padding:1px 5px;border-radius:2px;
+  margin-left:5px;letter-spacing:1px;vertical-align:middle;text-transform:uppercase}
+#ws-badge{position:absolute;top:11px;right:calc(var(--pw) + 9px);
+  font-size:8px;letter-spacing:1px;color:var(--txt);z-index:21;opacity:.5;pointer-events:none}
+#loader{position:absolute;inset:0;right:var(--pw);background:rgba(2,9,18,.93);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;z-index:30;transition:opacity .5s}
+#loader.hidden{opacity:0;pointer-events:none}
+#loader-txt{font-family:'Orbitron',monospace;font-size:11px;letter-spacing:3px;color:var(--accent)}
+.spinner{width:32px;height:32px;border:2px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);
+  z-index:999;opacity:.22}
+</style>
+</head>
+<body>
+<canvas id="map-canvas"></canvas>
+<canvas id="anim-canvas"></canvas>
+
+<div id="topbar">
+  <div id="hdr">
+    <h1>NETFLOW GLOBE</h1>
+    <div class="pill">Flows: <b id="s-flows">—</b></div>
+    <div class="pill">↑ <b id="s-out">—</b></div>
+    <div class="pill">↓ <b id="s-in">—</b></div>
+    <div class="pill">Pkts: <b id="s-pkts">0</b></div>
+    <div id="hdr-gap"></div>
+    <button class="hbtn" id="filter-toggle" onclick="toggleFilterBar()">⧩ FILTER</button>
+    <button class="hbtn renew" id="renew-btn" onclick="openSessionModal()">🔑 SESSION</button>
+    <button class="hbtn" id="pause-btn" onclick="togglePause()">⏸ PAUSE</button>
+  </div>
+  <div id="filter-bar">
+    <!-- Row 1: display filters -->
+    <div id="fb-row1">
+      <label>SRC IP</label>
+      <input type="text"   id="fi-src-ip"   placeholder="192.168.1.10" oninput="applyFilter()">
+      <label>DST IP</label>
+      <input type="text"   id="fi-dst-ip"   placeholder="65.20.89.225" oninput="applyFilter()">
+      <div class="fsep"></div>
+      <label>SRC PORT</label>
+      <input type="number" id="fi-src-port" placeholder="443" oninput="applyFilter()">
+      <label>DST PORT</label>
+      <input type="number" id="fi-dst-port" placeholder="443" oninput="applyFilter()">
+      <div class="fsep"></div>
+      <label>HOST / DNS</label>
+      <input type="text"   id="fi-host"     placeholder="google.com" oninput="applyFilter()">
+      <div id="filter-badge">FILTERED</div>
+      <button id="filter-clear" onclick="clearFilter()">✕ CLEAR</button>
+      <span id="filter-count"></span>
+    </div>
+    <!-- Row 2: query params sent to server -->
+    <div id="fb-row2">
+      <label>INTERFACE ID</label>
+      <input type="number" id="fi-ifid"   value="0"  min="0" placeholder="0">
+      <label style="margin-left:4px">MAX FLOWS</label>
+      <input type="number" id="fi-length" value="50" min="1" max="500" placeholder="50">
+      <div class="fsep"></div>
+      <label>PROTOCOL</label>
+      <div class="proto-group">
+        <button class="proto-btn tcp-sel" id="proto-tcp" onclick="selectProto('tcp')">TCP</button>
+        <button class="proto-btn"         id="proto-udp" onclick="selectProto('udp')">UDP</button>
+      </div>
+      <div class="fsep"></div>
+      <button id="apply-params" onclick="applyQueryParams()">▶ APPLY &amp; RELOAD</button>
+      <span class="param-hint" id="param-hint">ifid=0 · length=50 · TCP</span>
+    </div>
+  </div>
+</div>
+
+<!-- SESSION RENEWAL MODAL -->
+<div id="session-modal">
+  <div id="session-box">
+    <h3>🔑 RENEW SESSION</h3>
+    <div class="mf">
+      <label>Username</label>
+      <input type="text"     id="s-user" value="admin">
+    </div>
+    <div class="mf">
+      <label>Password</label>
+      <input type="password" id="s-pass" placeholder="••••••••"
+        onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="session-status"></div>
+    <div class="macts">
+      <button class="mbtn mbtn-ok"     onclick="doLogin()">LOGIN &amp; RENEW</button>
+      <button class="mbtn mbtn-cancel" onclick="closeSessionModal()">CANCEL</button>
+    </div>
+  </div>
+  <!-- INTERFACE STATS BAR (always visible, updates every poll) -->
+  <div id="if-stats-bar">
+    <div class="isb-seg">
+      <span class="isb-label">Interface</span>
+      <span class="isb-val" id="is-ifname">—</span>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Devices</span>
+      <span class="isb-val"><b id="is-devices">—</b></span>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Hosts</span>
+      <span class="isb-val"><b id="is-hosts">—</b></span>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Flows</span>
+      <span class="isb-val"><b id="is-flows">—</b></span>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Alerted</span>
+      <span class="isb-val isb-alert" id="is-alerted">—</span>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Upload</span>
+      <div class="thr-bar">
+        <span class="isb-val isb-up" id="is-up">—</span>
+        <div class="thr-track"><div class="thr-fill-up" id="is-up-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Download</span>
+      <div class="thr-bar">
+        <span class="isb-val isb-dn" id="is-dn">—</span>
+        <div class="thr-track"><div class="thr-fill-dn" id="is-dn-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Drops</span>
+      <span class="isb-val isb-warn" id="is-drops">—</span>
+    </div>
+    <div class="isb-seg">
+      <span class="isb-label">Uptime</span>
+      <span class="isb-val" id="is-uptime">—</span>
+    </div>
+  </div>
+</div>
+
+<div id="ws-badge">WS: <span id="ws-state">connecting</span></div>
+<div id="zoom-ctrl">
+  <button class="zbtn" onclick="zoomBy(1.4)">+</button>
+  <button class="zbtn" onclick="zoomBy(1/1.4)">−</button>
+  <button class="zbtn" onclick="zoomReset()" style="font-size:10px">⌂</button>
+</div>
+<div id="statusbar">
+  <div id="dot" class="warn"></div>
+  <span id="s-status">Connecting…</span>
+  <span id="s-time" style="margin-left:auto;opacity:.5"></span>
+</div>
+<div id="legend">
+  <div class="ltitle">DEVICE OS (outbound)</div>
+  <div class="lrow"><div class="ldot" style="background:#1d7ff5;box-shadow:0 0 4px #1d7ff5"></div>Windows</div>
+  <div class="lrow"><div class="ldot" style="background:#22c55e;box-shadow:0 0 4px #22c55e"></div>Android</div>
+  <div class="lrow"><div class="ldot" style="background:#ef4444;box-shadow:0 0 4px #ef4444"></div>Linux</div>
+  <div class="lrow"><div class="ldot" style="background:#94a3b8;box-shadow:0 0 4px #94a3b8"></div>iOS</div>
+  <div class="lrow"><div class="ldot" style="background:#cbd5e1;box-shadow:0 0 3px #cbd5e1"></div>macOS</div>
+  <div class="lrow"><div class="ldot" style="background:#facc15;box-shadow:0 0 4px #facc15"></div>Other</div>
+  <div class="ltitle" style="margin-top:8px">DIRECTION</div>
+  <div class="lrow"><span class="larr">→</span><span style="font-size:8px">Outbound (solid)</span></div>
+  <div class="lrow"><span class="larr" style="opacity:.6">→</span><span style="font-size:8px">Inbound (blended)</span></div>
+</div>
+<div id="hint">dbl-right-click: zoom in &nbsp;·&nbsp; dbl-left-click: zoom out &nbsp;·&nbsp; drag: pan</div>
+<div id="zoom-badge">zoom: <span id="zoom-level">1.0×</span></div>
+<div id="panel">
+  <div id="ph">
+    <div id="ph-left">
+      <div>ACTIVE FLOWS</div>
+      <div id="ph-sub">ifid=0 · TCP</div>
+    </div>
+    <span id="flow-count">—</span>
+  </div>
+  <div id="flow-list"></div>
+</div>
+<div id="loader">
+  <div class="spinner"></div>
+  <div id="loader-txt">LOADING MAP…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script>
+'use strict';
+const mapC=document.getElementById('map-canvas'),animC=document.getElementById('anim-canvas');
+const mCtx=mapC.getContext('2d'),aCtx=animC.getContext('2d');
+const PW=()=>parseInt(getComputedStyle(document.documentElement).getPropertyValue('--pw'));
+let W=0,H=0,world=null,countries=null,borders=null,centroids=[];
+let offscreenC=null,offCtx=null,lastRender={zk:1,zx:0,zy:0};
+
+function resize(){
+  W=window.innerWidth-PW();H=window.innerHeight;
+  mapC.width=animC.width=W;mapC.height=animC.height=H;
+  offscreenC=document.createElement('canvas');offscreenC.width=W;offscreenC.height=H;
+  offCtx=offscreenC.getContext('2d');if(world)scheduleMapDraw();
+}
+window.addEventListener('resize',resize);
+
+let zk=1,zx=0,zy=0;
+function zProj(){return d3.geoNaturalEarth1().scale((W/6.3)*zk).translate([W/2*zk+zx,H/2*zk+zy]);}
+function screenPt(lon,lat){return zProj()([lon,lat]);}
+function applyZoom(newK,cx,cy){
+  newK=Math.max(0.5,Math.min(24,newK));
+  zx=cx-(cx-zx)*(newK/zk);zy=cy-(cy-zy)*(newK/zk);zk=newK;
+  document.getElementById('zoom-level').textContent=zk.toFixed(1)+'x';
+}
+function zoomBy(f,cx,cy){applyZoom(zk*f,cx!=null?cx:W/2,cy!=null?cy:H/2);scheduleMapDraw();}
+function zoomReset(){zk=1;zx=0;zy=0;document.getElementById('zoom-level').textContent='1.0x';scheduleMapDraw();}
+
+let panning=false,panMoved=false,panStart={x:0,y:0},lastRightTime=0;
+animC.addEventListener('contextmenu',e=>e.preventDefault());
+animC.addEventListener('mousedown',e=>{
+  if(e.button===0){panning=true;panMoved=false;panStart={x:e.clientX-zx,y:e.clientY-zy};}
+  if(e.button===2){const now=Date.now();if(now-lastRightTime<380){zoomBy(1.65,e.offsetX,e.offsetY);lastRightTime=0;}else lastRightTime=now;}
+});
+animC.addEventListener('dblclick',e=>{zoomBy(1/1.65,e.offsetX,e.offsetY);e.preventDefault();});
+window.addEventListener('mousemove',e=>{if(!panning)return;panMoved=true;zx=e.clientX-panStart.x;zy=e.clientY-panStart.y;blitShifted();});
+window.addEventListener('mouseup',()=>{if(panning&&panMoved)scheduleMapDraw();panning=false;});
+let wheelTimer=null;
+animC.addEventListener('wheel',e=>{
+  e.preventDefault();applyZoom(zk*(e.deltaY<0?1.1:1/1.1),e.offsetX,e.offsetY);blitShifted();
+  clearTimeout(wheelTimer);wheelTimer=setTimeout(scheduleMapDraw,100);
+},{passive:false});
+
+let rafPending=null;
+function scheduleMapDraw(){if(rafPending)return;rafPending=requestAnimationFrame(()=>{rafPending=null;renderToOffscreen();});}
+
+function renderToOffscreen(){
+  if(!world||!offCtx)return;
+  const zp=zProj(),zpath=d3.geoPath(zp,offCtx);
+  offCtx.clearRect(0,0,W,H);offCtx.fillStyle='#040f20';offCtx.fillRect(0,0,W,H);
+  const grat=d3.geoGraticule().step([15,15])();
+  offCtx.beginPath();zpath(grat);offCtx.strokeStyle='rgba(15,50,90,.35)';offCtx.lineWidth=.4;offCtx.stroke();
+  offCtx.beginPath();zpath(countries);offCtx.fillStyle='#0e2035';offCtx.fill();
+  offCtx.beginPath();zpath(borders);offCtx.strokeStyle='rgba(45,125,215,.95)';
+  offCtx.lineWidth=Math.min(1.4,Math.max(.5,.55*zk));offCtx.stroke();
+  offCtx.beginPath();zpath(countries);offCtx.strokeStyle='rgba(70,165,240,.42)';
+  offCtx.lineWidth=Math.min(.9,Math.max(.25,.3*zk));offCtx.stroke();
+  offCtx.beginPath();zpath({type:'Sphere'});offCtx.strokeStyle='rgba(15,100,200,.1)';offCtx.lineWidth=1.5;offCtx.stroke();
+  if(zk>=1.8&&centroids.length){
+    const fs=Math.min(11,Math.max(7,7.5*Math.pow(zk,0.38)));
+    offCtx.font=fs+'px "JetBrains Mono",monospace';offCtx.textAlign='center';offCtx.textBaseline='middle';
+    for(const c of centroids){
+      const name=CNAMES[c.id];if(!name)continue;
+      const pt=zp([c.lon,c.lat]);if(!pt)continue;
+      const[px,py]=pt;if(px<-10||px>W+10||py<-10||py>H+10)continue;
+      offCtx.fillStyle='rgba(2,9,18,.62)';offCtx.fillText(name,px+.8,py+.8);
+      offCtx.fillStyle='rgba(190,225,255,.60)';offCtx.fillText(name,px,py);
+    }
+  }
+  if(zk>=2.5&&dnsNodes.size){
+    const fs=Math.min(10,Math.max(8,7*Math.pow(zk,0.32)));
+    offCtx.font='bold '+fs+'px "JetBrains Mono",monospace';offCtx.textAlign='center';offCtx.textBaseline='bottom';
+    for(const[,n]of dnsNodes){
+      const pt=zp([n.lon,n.lat]);if(!pt)continue;
+      const[px,py]=pt;if(px<0||px>W||py<0||py>H)continue;
+      // Build label: hostname + OS tag if known
+      const osTag=n.os&&n.os!=='unknown'?(' ['+OS_LABELS[n.os]+']'):'';
+      const label=n.host+osTag;
+      const tw=offCtx.measureText(label).width;
+      offCtx.fillStyle='rgba(2,9,18,.86)';offCtx.fillRect(px-tw/2-4,py-fs-7,tw+8,fs+6);
+      offCtx.strokeStyle=n.color+'70';offCtx.lineWidth=.8;offCtx.strokeRect(px-tw/2-4,py-fs-7,tw+8,fs+6);
+      offCtx.fillStyle=n.color;offCtx.fillText(label,px,py-2);
+      // Node dot with OS glow
+      offCtx.beginPath();offCtx.arc(px,py+3,3.5,0,Math.PI*2);
+      offCtx.fillStyle=n.color;offCtx.fill();
+      offCtx.beginPath();offCtx.arc(px,py+3,6,0,Math.PI*2);
+      offCtx.strokeStyle=n.color+'44';offCtx.lineWidth=1.5;offCtx.stroke();
+    }
+  }
+  const vg=offCtx.createRadialGradient(W/2,H/2,H*.1,W/2,H/2,H*.88);
+  vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(2,9,18,.5)');
+  offCtx.fillStyle=vg;offCtx.fillRect(0,0,W,H);
+  lastRender={zk,zx,zy};mCtx.clearRect(0,0,W,H);mCtx.drawImage(offscreenC,0,0);
+}
+function blitShifted(){if(!offscreenC)return;mCtx.clearRect(0,0,W,H);mCtx.drawImage(offscreenC,zx-lastRender.zx,zy-lastRender.zy);}
+
+const CNAMES={4:'Afghanistan',8:'Albania',12:'Algeria',24:'Angola',32:'Argentina',36:'Australia',
+  40:'Austria',50:'Bangladesh',56:'Belgium',68:'Bolivia',76:'Brazil',100:'Bulgaria',
+  104:'Myanmar',116:'Cambodia',120:'Cameroon',124:'Canada',152:'Chile',156:'China',
+  170:'Colombia',180:'DR Congo',188:'Costa Rica',191:'Croatia',192:'Cuba',203:'Czechia',
+  208:'Denmark',218:'Ecuador',818:'Egypt',231:'Ethiopia',246:'Finland',250:'France',
+  276:'Germany',288:'Ghana',300:'Greece',320:'Guatemala',340:'Honduras',356:'India',
+  360:'Indonesia',364:'Iran',368:'Iraq',372:'Ireland',376:'Israel',380:'Italy',
+  388:'Jamaica',392:'Japan',400:'Jordan',398:'Kazakhstan',404:'Kenya',410:'S.Korea',
+  414:'Kuwait',418:'Laos',422:'Lebanon',434:'Libya',484:'Mexico',504:'Morocco',
+  508:'Mozambique',524:'Nepal',528:'Netherlands',554:'New Zealand',566:'Nigeria',
+  578:'Norway',586:'Pakistan',604:'Peru',608:'Philippines',616:'Poland',620:'Portugal',
+  642:'Romania',643:'Russia',682:'Saudi Arabia',706:'Somalia',710:'S.Africa',
+  724:'Spain',144:'Sri Lanka',729:'Sudan',752:'Sweden',756:'Switzerland',760:'Syria',
+  764:'Thailand',788:'Tunisia',792:'Turkey',804:'Ukraine',784:'UAE',826:'UK',
+  840:'USA',858:'Uruguay',862:'Venezuela',704:'Vietnam',887:'Yemen'};
+
+async function loadMap(){
+  setLoader('LOADING MAP…');
+  const[r1,r2]=await Promise.all([
+    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json'),
+    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'),
+  ]);
+  world=await r1.json();const w2=await r2.json();
+  countries=topojson.feature(world,world.objects.countries);
+  borders=topojson.mesh(world,world.objects.countries,(a,b)=>a!==b);
+  centroids=topojson.feature(w2,w2.objects.countries).features
+    .map(f=>{const c=d3.geoCentroid(f);return{lon:c[0],lat:c[1],id:+f.id};})
+    .filter(c=>isFinite(c.lon));
+  resize();renderToOffscreen();hideLoader();
+}
+
+// SESSION MODAL
+function openSessionModal(){
+  document.getElementById('session-modal').classList.add('open');
+  document.getElementById('session-status').textContent='';
+  document.getElementById('session-status').className='';
+  setTimeout(()=>document.getElementById('s-pass').focus(),100);
+}
+function closeSessionModal(){document.getElementById('session-modal').classList.remove('open');}
+document.getElementById('session-modal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('session-modal'))closeSessionModal();
+});
+
+async function doLogin(){
+  const user=document.getElementById('s-user').value.trim();
+  const pass=document.getElementById('s-pass').value;
+  if(!user||!pass){setSessStatus('err','Enter username and password');return;}
+  const btn=document.getElementById('renew-btn');
+  btn.classList.add('renewing');btn.textContent='🔄 RENEWING…';
+  setSessStatus('','Contacting ntop…');
+  try{
+    const r=await fetch('/api/renew-session',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user,pass}),
+    });
+    const d=await r.json();
+    if(d.ok){
+      setSessStatus('ok','✓ Session renewed');
+      setStatus('ok','Session renewed — flows will resume');
+      setTimeout(closeSessionModal,1600);
+    }else{
+      setSessStatus('err','✗ '+(d.error||'Login failed'));
+    }
+  }catch(e){setSessStatus('err','Request failed: '+e.message);}
+  finally{btn.classList.remove('renewing');btn.textContent='🔑 SESSION';}
+}
+function setSessStatus(type,msg){
+  const el=document.getElementById('session-status');el.className=type;el.textContent=msg;
+}
+
+// QUERY PARAMS
+let currentProto='tcp';
+function selectProto(p){
+  currentProto=p;
+  document.getElementById('proto-tcp').className='proto-btn'+(p==='tcp'?' tcp-sel':'');
+  document.getElementById('proto-udp').className='proto-btn'+(p==='udp'?' udp-sel':'');
+}
+async function applyQueryParams(){
+  const ifid=document.getElementById('fi-ifid').value.trim()||'0';
+  const length=document.getElementById('fi-length').value.trim()||'50';
+  const proto=currentProto;
+  document.getElementById('param-hint').textContent='ifid='+ifid+' · length='+length+' · '+proto.toUpperCase();
+  document.getElementById('ph-sub').textContent='ifid='+ifid+' · '+proto.toUpperCase();
+  try{
+    const r=await fetch('/api/set-params',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ifid,length,proto}),
+    });
+    const d=await r.json();
+    setStatus(d.ok?'ok':'err',d.ok?'Params updated — reloading flows…':'Error: '+(d.error||'?'));
+  }catch(e){setStatus('err','Params update failed: '+e.message);}
+}
+
+// FILTER
+const FILTER={srcIp:'',dstIp:'',srcPort:'',dstPort:'',host:''};
+let filterOpen=false,lastFlowData=null;
+function toggleFilterBar(){
+  filterOpen=!filterOpen;
+  document.getElementById('filter-bar').classList.toggle('open',filterOpen);
+  document.getElementById('filter-toggle').classList.toggle('active',filterOpen);
+}
+function applyFilter(){
+  FILTER.srcIp=document.getElementById('fi-src-ip').value.trim();
+  FILTER.dstIp=document.getElementById('fi-dst-ip').value.trim();
+  FILTER.srcPort=document.getElementById('fi-src-port').value.trim();
+  FILTER.dstPort=document.getElementById('fi-dst-port').value.trim();
+  FILTER.host=document.getElementById('fi-host').value.trim().toLowerCase();
+  const hasActive=Object.values(FILTER).some(v=>v);
+  document.getElementById('filter-badge').classList.toggle('on',hasActive);
+  document.getElementById('filter-toggle').classList.toggle('active',hasActive||filterOpen);
+  ['fi-src-ip','fi-dst-ip','fi-src-port','fi-dst-port','fi-host'].forEach(id=>{
+    document.getElementById(id).classList.toggle('fi-active',!!document.getElementById(id).value.trim());
+  });
+  if(lastFlowData)renderFlows(lastFlowData);
+}
+function clearFilter(){
+  ['fi-src-ip','fi-dst-ip','fi-src-port','fi-dst-port','fi-host'].forEach(id=>{
+    document.getElementById(id).value='';document.getElementById(id).classList.remove('fi-active');
+  });
+  Object.keys(FILTER).forEach(k=>FILTER[k]='');
+  document.getElementById('filter-badge').classList.remove('on');
+  document.getElementById('filter-toggle').classList.toggle('active',filterOpen);
+  if(lastFlowData)renderFlows(lastFlowData);
+}
+function matchesFilter(f){
+  if(FILTER.srcIp&&!f.srcIp.includes(FILTER.srcIp))return false;
+  if(FILTER.dstIp&&!f.dstIp.includes(FILTER.dstIp))return false;
+  if(FILTER.srcPort&&String(f.srcPort)!==FILTER.srcPort)return false;
+  if(FILTER.dstPort&&String(f.dstPort)!==FILTER.dstPort)return false;
+  if(FILTER.host){
+    const h=FILTER.host;
+    const sH=(f.srcHost||f.srcIp).toLowerCase(),dH=(f.dstHost||f.dstIp).toLowerCase();
+    if(!sH.includes(h)&&!dH.includes(h)&&!f.srcIp.includes(h)&&!f.dstIp.includes(h))return false;
+  }
+  return true;
+}
+
+// PACKET ENGINE
+// ── OS DETECTION ──────────────────────────────────────────────
+const OS_PATTERNS = {
+  windows : /win-?11|win-?10|win-?7|\bwin\b|desktop|laptop|w10|w11/i,
+  android : /oppo|nokia|redmi|oneplus|vivo|\bmoto\b|motorola|huawei|xiaomi|\bgoogle\b|pixel|nothing|android/i,
+  linux   : /kali|debian|ubuntu|localhost|docker|proxmox|ludus|unraid|raspberrypi|raspberry|\blinux\b/i,
+  ios     : /iphone|ipad/i,
+  macos   : /\bmac\b|macbook|macpro|imac|macmini/i,
+};
+const OS_COLORS = {
+  windows : '#1d7ff5',   // blue
+  android : '#22c55e',   // green
+  linux   : '#ef4444',   // red
+  ios     : '#94a3b8',   // dark grey
+  macos   : '#cbd5e1',   // light grey
+  other   : '#facc15',   // yellow
+  unknown : '#0f8fff',   // fallback blue (non-local)
+};
+const OS_LABELS = {
+  windows:'Windows', android:'Android', linux:'Linux',
+  ios:'iOS', macos:'macOS', other:'Other', unknown:'—'
+};
+
+function detectOS(hostname) {
+  if (!hostname) return 'unknown';
+  for (const [os, pat] of Object.entries(OS_PATTERNS)) {
+    if (pat.test(hostname)) return os;
+  }
+  return null; // null = not a recognised local device
+}
+
+// Returns the OS for the SOURCE of a flow (local device end)
+// srcHost is the local/client side hostname
+function srcOS(f) {
+  return detectOS(f.srcHost || f.srcName || f.srcIp) || 'unknown';
+}
+
+// Outbound packet colour = OS colour of local source device
+// Inbound return packet colour = dimmer tint of same OS colour
+function outboundColor(f, proto) {
+  if (proto === 'udp') {
+    const os = srcOS(f);
+    const base = OS_COLORS[os] || OS_COLORS.unknown;
+    return base;
+  }
+  const os = srcOS(f);
+  return OS_COLORS[os] || OS_COLORS.unknown;
+}
+// Inbound: slightly warm-shifted version of the OS colour at 80% opacity via hex
+function inboundColorFor(f) {
+  const os = srcOS(f);
+  const hex = OS_COLORS[os] || OS_COLORS.unknown;
+  // Blend toward #ff8c42 (warm orange) at 40%
+  return blendHex(hex, '#ff8c42', 0.4);
+}
+function blendHex(a, b, t) {
+  const parse = h => [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  const [ar,ag,ab]=parse(a), [br,bg,bb]=parse(b);
+  const r=Math.round(ar+(br-ar)*t), g=Math.round(ag+(bg-ag)*t), bl=Math.round(ab+(bb-ab)*t);
+  return '#'+[r,g,bl].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+const INBOUND_COLOR='#ff8c42',MAX_PKTS=500,TRAIL_LEN=30,pool=[],packets=[];
+
+class Pkt{
+  init(sG,dG,color,inbound){this.color=color;this.inbound=inbound;this.t=0;this.spd=.003+Math.random()*.003;this.dead=false;this.trail=[];this._sG=sG;this._dG=dG;return true;}
+  _geom(){
+    const s=screenPt(this._sG.lon,this._sG.lat),d=screenPt(this._dG.lon,this._dG.lat);
+    if(!s||!d)return null;
+    const mx=(s[0]+d[0])/2,my=(s[1]+d[1])/2,dx=d[0]-s[0],dy=d[1]-s[1];
+    const dist=Math.hypot(dx,dy)||1,cv=Math.min(dist*.33,130),sg=this.inbound?-1:1;
+    return{s,d,cp:[mx-sg*dy*cv/dist,my+sg*dx*cv/dist]};
+  }
+  bez(t,g){const u=1-t;return[u*u*g.s[0]+2*u*t*g.cp[0]+t*t*g.d[0],u*u*g.s[1]+2*u*t*g.cp[1]+t*t*g.d[1]];}
+  update(dt){
+    this.t+=this.spd*(dt*.06);
+    if(this.t>1.15){this.dead=true;return;}
+    const g=this._geom();if(!g){this.dead=true;return;}
+    const cur=this.bez(Math.min(this.t,1),g);this.trail.push([...cur]);if(this.trail.length>TRAIL_LEN)this.trail.shift();
+  }
+  draw(ctx){
+    if(this.dead)return;const g=this._geom();if(!g)return;
+    const{s,d,cp}=g,tl=this.trail.length;
+    ctx.beginPath();ctx.moveTo(s[0],s[1]);ctx.quadraticCurveTo(cp[0],cp[1],d[0],d[1]);
+    ctx.strokeStyle=this.color+'15';ctx.lineWidth=.6;ctx.stroke();
+    for(let i=1;i<tl;i++){
+      const a=Math.round((i/tl)*185).toString(16).padStart(2,'0');
+      ctx.beginPath();ctx.moveTo(this.trail[i-1][0],this.trail[i-1][1]);ctx.lineTo(this.trail[i][0],this.trail[i][1]);
+      ctx.strokeStyle=this.color+a;ctx.lineWidth=1.2+(i/tl)*1.4;ctx.stroke();
+    }
+    const p=this.bez(Math.min(this.t,1),g);
+    const gr=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],10);
+    gr.addColorStop(0,this.color+'dd');gr.addColorStop(1,this.color+'00');
+    ctx.beginPath();ctx.arc(p[0],p[1],10,0,Math.PI*2);ctx.fillStyle=gr;ctx.fill();
+    if(this.inbound){ctx.fillStyle=this.color;ctx.fillRect(p[0]-2.2,p[1]-2.2,4.4,4.4);}
+    else{ctx.beginPath();ctx.arc(p[0],p[1],2.4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();}
+    ctx.beginPath();ctx.arc(s[0],s[1],3,0,Math.PI*2);ctx.fillStyle=this.color+'44';ctx.fill();
+    ctx.beginPath();ctx.arc(d[0],d[1],3,0,Math.PI*2);ctx.fillStyle=this.color+'44';ctx.fill();
+    if(this.t>.85){const pr=(this.t-.85)/.3;ctx.beginPath();ctx.arc(d[0],d[1],4+pr*16,0,Math.PI*2);ctx.strokeStyle=this.color+Math.round((1-pr)*100).toString(16).padStart(2,'0');ctx.lineWidth=1;ctx.stroke();}
+  }
+}
+function spawnPkt(sG,dG,color,inbound){
+  if(!sG||!dG)return;if(packets.length>=MAX_PKTS)packets.splice(0,20);
+  const p=pool.pop()||new Pkt();p.init(sG,dG,color,inbound);packets.push(p);
+}
+
+let paused=false;
+function togglePause(){
+  paused=!paused;
+  const btn=document.getElementById('pause-btn');
+  btn.textContent=paused?'▶ RESUME':'⏸ PAUSE';btn.classList.toggle('paused',paused);
+  setStatus(paused?'warn':'ok',paused?'Paused':'Resumed');
+}
+
+let lastTs=0;
+function loop(ts){
+  const dt=Math.min(ts-lastTs,50);lastTs=ts;
+  aCtx.clearRect(0,0,W,H);
+  for(let i=packets.length-1;i>=0;i--){const p=packets[i];if(!paused)p.update(dt);if(p.dead){pool.push(p);packets.splice(i,1);}else p.draw(aCtx);}
+  document.getElementById('s-pkts').textContent=packets.length;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+let ws,wsRetry=1000;
+function connectWS(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.host+'/ws');
+  ws.onopen=()=>{document.getElementById('ws-state').textContent='live';document.getElementById('ws-state').style.color='#00f5d4';wsRetry=1000;setStatus('ok','Connected — waiting for data…');};
+  ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data));}catch(ex){}};
+  ws.onclose=ws.onerror=()=>{document.getElementById('ws-state').textContent='reconnecting';document.getElementById('ws-state').style.color='#ffaa28';setStatus('warn','Disconnected, retrying…');setTimeout(connectWS,wsRetry);wsRetry=Math.min(wsRetry*2,10000);};
+}
+function handleMsg(msg){
+  if(msg.type==='flows'){lastFlowData=msg.data;renderFlows(msg.data);}
+  if(msg.type==='ifstats'){renderIfStats(msg.data);}
+  if(msg.type==='error'){
+    const expired=msg.sessionExpired||msg.message==='SESSION_EXPIRED';
+    setStatus('err',expired?'Session expired — click 🔑 SESSION to renew':'Server: '+msg.message);
+    if(expired){document.getElementById('renew-btn').classList.add('renewing');document.getElementById('renew-btn').textContent='🔑 EXPIRED';}
+  }
+  if(msg.type==='params'){
+    const d=msg.data;
+    document.getElementById('fi-ifid').value=d.ifid||'0';
+    document.getElementById('fi-length').value=d.length||'50';
+    selectProto(d.proto||'tcp');
+    document.getElementById('param-hint').textContent='ifid='+d.ifid+' · length='+d.length+' · '+(d.proto||'tcp').toUpperCase();
+    document.getElementById('ph-sub').textContent='ifid='+d.ifid+' · '+(d.proto||'tcp').toUpperCase();
+  }
+  if(msg.type==='session_ok'){setStatus('ok','Session renewed');document.getElementById('renew-btn').classList.remove('renewing');document.getElementById('renew-btn').textContent='🔑 SESSION';}
+}
+
+const dnsNodes=new Map();
+function renderFlows(data){
+  const all=data.flows||[],proto=data.proto||'tcp';
+  const flows=all.filter(matchesFilter);
+  const active=Object.values(FILTER).some(v=>v);
+  document.getElementById('filter-count').textContent=active?flows.length+' / '+all.length+' flows':'';
+  if(!paused){
+    let totOut=0,totIn=0;dnsNodes.clear();
+    for(const f of flows){
+      const color=outboundColor(f,proto);
+      const iColor=inboundColorFor(f);
+      const os=srcOS(f);
+      totOut+=f.cliBytes||0;totIn+=f.srvBytes||0;
+      if(f.srcGeo&&f.dstGeo){
+        spawnPkt(f.srcGeo,f.dstGeo,color,false);
+        if((f.srvBytes||0)>0)spawnPkt(f.dstGeo,f.srcGeo,iColor,true);
+        const kS=f.srcGeo.lon+','+f.srcGeo.lat,kD=f.dstGeo.lon+','+f.dstGeo.lat;
+        if(!dnsNodes.has(kS))dnsNodes.set(kS,{host:f.srcHost||f.srcIp,lon:f.srcGeo.lon,lat:f.srcGeo.lat,color,os});
+        if(!dnsNodes.has(kD))dnsNodes.set(kD,{host:f.dstHost||f.dstIp,lon:f.dstGeo.lon,lat:f.dstGeo.lat,color});
+      }
+    }
+    document.getElementById('s-flows').textContent=data.totalFlows||all.length;
+    document.getElementById('s-out').textContent=fmtB(totOut);
+    document.getElementById('s-in').textContent=fmtB(totIn);
+    document.getElementById('s-time').textContent=new Date(data.timestamp).toLocaleTimeString();
+    setStatus('ok','Live — '+(active?flows.length+'/'+all.length:all.length)+' flows ['+proto.toUpperCase()+' ifid='+(data.ifid||'0')+']');
+    if(zk>=2.5)scheduleMapDraw();
+  }
+  document.getElementById('flow-count').textContent=active?flows.length+' of '+all.length:flows.length+' shown';
+  renderList(flows,proto);
+}
+
+function renderList(flows,proto){
+  document.getElementById('flow-list').innerHTML=flows.map(f=>{
+    const color=outboundColor(f,proto);
+    const iColor=inboundColorFor(f);
+    const os=srcOS(f);
+    const osLabel=OS_LABELS[os]||'';
+    const sl=f.srcGeo?(f.srcGeo.city||f.srcGeo.country||f.srcIp):f.srcIp;
+    const dl=f.dstGeo?(f.dstGeo.city||f.dstGeo.country||f.dstIp):f.dstIp;
+    const sH=f.srcHost&&f.srcHost!==f.srcIp?f.srcHost:null;
+    const dH=f.dstHost&&f.dstHost!==f.dstIp?f.dstHost:null;
+    const hasIn=(f.srvBytes||0)>0;
+    return '<div class="fi">'+
+      '<div class="fi-app" style="color:'+color+'">'+
+        '<span class="fi-dir out" style="background:'+color+'22;border-color:'+color+'55;color:'+color+'">OUT</span>'+
+        (proto==='udp'?'UDP':f.app)+(f.encrypted?' 🔒':'')+
+        '<span class="fi-os-badge" style="background:'+color+'18;border:1px solid '+color+'44;color:'+color+'">'+osLabel+'</span>'+
+      '</div>'+
+      (sH||dH?'<div class="fi-host" style="color:'+color+'">'+(sH||f.srcIp)+' <span>→</span> '+(dH||f.dstIp)+'</div>':'')+
+      '<div class="fi-ips">'+f.srcIp+':'+f.srcPort+' → '+f.dstIp+':'+f.dstPort+'</div>'+
+      '<div class="fi-geo">'+sl+' → '+dl+'</div>'+
+      '<div class="fi-meta"><span style="color:'+color+'">↑ '+fmtB(f.cliBytes||0)+'</span>'+
+        (hasIn?'<span style="color:'+iColor+'">↓ '+fmtB(f.srvBytes||0)+'</span>':'')+
+        '<span style="opacity:.4">'+fmtB(f.bps)+'/s</span>'+
+        (f.score>0?'<span class="fi-score">⚠ '+f.score+'</span>':'')+
+        (f.info?'<span class="fi-info">'+f.info+'</span>':'')+
+      '</div>'+
+      (hasIn?'<div style="font-size:9px;color:'+iColor+';opacity:.8;margin-top:2px"><span class="fi-dir in" style="background:'+iColor+'18;border-color:'+iColor+'44;color:'+iColor+'">IN</span>'+(dH||f.dstIp)+' → '+(sH||f.srcIp)+'</div>':'')+
+    '</div>';
+  }).join('');
+}
+
+// Max seen throughput for bar scaling (resets when a value exceeds it)
+let maxThroughput = 1_000_000; // 1 Mbps floor
+
+function renderIfStats(d) {
+  if (!d) return;
+
+  // Text values
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+
+  set('is-ifname',  d.ifname || '—');
+  set('is-devices', d.num_devices);
+  set('is-hosts',   d.num_hosts + ' (' + d.num_local_hosts + ' local)');
+  set('is-flows',   d.num_flows);
+  set('is-alerted', d.alerted_flows || 0);
+  set('is-drops',   d.drops || 0);
+  set('is-uptime',  d.uptime || '—');
+
+  // Throughput in human-friendly units
+  set('is-up', fmtThr(d.upload_bps));
+  set('is-dn', fmtThr(d.download_bps));
+
+  // Progress bars — scale relative to highest seen value
+  const peak = Math.max(d.upload_bps, d.download_bps, maxThroughput);
+  if (peak > maxThroughput) maxThroughput = peak;
+  const upPct = Math.min(100, (d.upload_bps   / maxThroughput) * 100).toFixed(1);
+  const dnPct = Math.min(100, (d.download_bps  / maxThroughput) * 100).toFixed(1);
+
+  const ub = document.getElementById('is-up-bar');
+  const db = document.getElementById('is-dn-bar');
+  if (ub) ub.style.width = upPct + '%';
+  if (db) db.style.width = dnPct + '%';
+
+  // Colour alerted count red if > 0
+  const alertEl = document.getElementById('is-alerted');
+  if (alertEl) alertEl.style.color = d.alerted_flows > 0 ? 'var(--danger)' : 'var(--txt)';
+
+  // Colour drops amber if > 0
+  const dropEl = document.getElementById('is-drops');
+  if (dropEl) dropEl.style.color = d.drops > 0 ? 'var(--warn)' : 'var(--txt)';
+}
+
+function fmtThr(bps) {
+  if (!bps) return '0 bps';
+  if (bps < 1000)        return bps.toFixed(0) + ' bps';
+  if (bps < 1_000_000)   return (bps / 1000).toFixed(1) + ' Kbps';
+  if (bps < 1_000_000_000) return (bps / 1_000_000).toFixed(2) + ' Mbps';
+  return (bps / 1_000_000_000).toFixed(2) + ' Gbps';
+}
+
+function setStatus(type,msg){document.getElementById('dot').className=type==='err'?'err':type==='warn'?'warn':'';document.getElementById('s-status').textContent=msg;}
+function setLoader(t){document.getElementById('loader-txt').textContent=t;}
+function hideLoader(){document.getElementById('loader').classList.add('hidden');}
+function fmtB(b){b=+b;if(b<1024)return b.toFixed(0)+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';}
+loadMap().then(connectWS).catch(e=>{setLoader('LOAD FAILED');setStatus('err',e.message);});
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  netflow-globe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: netflow-globe:latest
+
+    container_name: netflow-globe
+
+    restart: unless-stopped
+
+    ports:
+      - "3300:3000"        # UI + WebSocket + API
+
+    environment:
+      # ── ntop connection ───────────────────────────────────────
+      NTOP_HOST: ntop.domain.com
+      NTOP_USER: admin
+      NTOP_PASS: yourntoppassword   # 
+
+      # ── Polling ───────────────────────────────────────────────
+      POLL_MS: 3000
+
+      # ── Default query params (overridable at runtime via UI) ──
+      DEFAULT_IFID:   "0"
+      DEFAULT_LENGTH: "50"
+      DEFAULT_PROTO:  tcp
+
+      # ── Home location for private IPs (lat, lon) ─────────────
+      HOME_LAT: "10.8505"
+      HOME_LON: "76.2711"
+
+      # ── App ───────────────────────────────────────────────────
+      PORT: 3000
+      NODE_ENV: production
+
+    volumes:
+      # Persist geo cache, DNS cache, and raw snapshots across restarts
+      - netflow-data:/data
+
+    # Networking — lets the container reach ntop on your LAN
+    # Change to "bridge" if ntop is on the public internet
+    network_mode: bridge        # ← gives container direct LAN access
+    # Uncomment the lines below and comment out network_mode if you
+    # want bridge networking instead:
+    # networks:
+    #   - default
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  netflow-data:
+    driver: local
