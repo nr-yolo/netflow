@@ -106,7 +106,7 @@ websocket.js     → broadcasts enriched flows to all browser clients
 
 | Variable | Default | Description |
 |---|---|---|
-| `NTOP_HOST` | `ntop.nrhomelab.com` | ntop hostname (no https://) |
+| `NTOP_HOST` | `ntop.example.com` | ntop hostname (no https://) |
 | `NTOP_USER` | `admin` | ntop username |
 | `NTOP_PASS` | `password123` | ntop password |
 | `PORT` | `3000` | UI + API + WebSocket port |
