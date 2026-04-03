@@ -1,4 +1,4 @@
-# NetFlow Globe v2
+# NetFlow
 
 Live packet flow visualizer — fetches from ntop, geocodes IPs, resolves hostnames, detects device OS, and renders animated arcs on a world map.
 
