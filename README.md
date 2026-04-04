@@ -47,7 +47,7 @@ docker build -t netflow-globe .
 docker run -d \
   --name netflow-globe \
   --network host \
-  -e NTOP_HOST=ntop.nrhomelab.com \
+  -e NTOP_HOST=ntop.example.com \
   -e NTOP_USER=admin \
   -e NTOP_PASS=password123 \
   -v netflow-data:/data \
